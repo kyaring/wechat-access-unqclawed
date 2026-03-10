@@ -70,9 +70,14 @@ export class QClawAPI {
     }
 
     if (ret === 0 || commonCode === 0) {
+      // 匹配 Python 的 or 语义：空对象 {} 视为 falsy 跳过
+      const nonEmpty = (v: unknown): unknown =>
+        v != null && typeof v === "object" && !Array.isArray(v) && Object.keys(v as Record<string, unknown>).length === 0
+          ? undefined
+          : v;
       const respData =
-        nested(data, "data", "resp", "data") ??
-        nested(data, "data", "data") ??
+        nonEmpty(nested(data, "data", "resp", "data")) ??
+        nonEmpty(nested(data, "data", "data")) ??
         data.data ??
         data;
       return { success: true, data: respData as Record<string, unknown> };

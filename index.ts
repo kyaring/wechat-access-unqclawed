@@ -282,6 +282,7 @@ const tencentAccessPlugin = {
           channels["wechat-access-unqclawed"] = {
             ...(channels["wechat-access-unqclawed"] ?? {}),
             token: channelToken,
+            wsUrl: env.wechatWsUrl,
           };
           const nextCfg: Record<string, unknown> = { ...fullCfg, channels };
           if (apiKey) {
