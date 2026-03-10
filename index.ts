@@ -86,7 +86,6 @@ const tencentAccessPlugin = {
     login: async ({ cfg, accountId, runtime }: { cfg: any; accountId?: string; runtime: any; verbose?: boolean; channelInput?: string }) => {
       const channelCfg = cfg?.channels?.["wechat-access-unqclawed"];
       const envName = channelCfg?.environment ? String(channelCfg.environment) : "production";
-      const bypassInvite = channelCfg?.bypassInvite === true;
       const authStatePath = channelCfg?.authStatePath ? String(channelCfg.authStatePath) : undefined;
 
       const env = getEnvironment(envName);
@@ -102,88 +101,121 @@ const tencentAccessPlugin = {
         if (s) state = s;
       }
 
-      // 2. 构造 auth URL → 抓取 QR 页面拿 uuid
+      // 2. 构造 auth URL
       runtime.log("[wechat-access] 生成微信登录二维码...");
       const authUrl = buildAuthUrl(state, env);
-      const uuid = await fetchQrUuid(authUrl);
 
       // 3. 终端显示 QR 码
       try {
         const qrterm = await import("qrcode-terminal");
         const generate = qrterm.default?.generate ?? qrterm.generate;
-        const qrContent = `https://open.weixin.qq.com/connect/confirm?uuid=${uuid}`;
-        generate(qrContent, { small: true }, (qrcode: string) => {
+        generate(authUrl, { small: true }, (qrcode: string) => {
           runtime.log("\n" + qrcode);
         });
       } catch {
-        runtime.log("(qrcode-terminal 不可用，请用浏览器打开下方链接)");
+        runtime.log("(qrcode-terminal 不可用)");
       }
       runtime.log(`\n或在浏览器打开: ${authUrl}\n`);
 
-      // 4. 轮询等待扫码
-      runtime.log("[wechat-access] 等待微信扫码...");
-      const deadline = Date.now() + 180_000; // 3 分钟超时
-      while (Date.now() < deadline) {
-        const result = await pollQrStatus(uuid);
+      // 4. 用临时文件接收 code：用户扫码授权后浏览器跳转，把地址栏 URL 或 code 写到临时文件
+      const { join } = await import("node:path");
+      const { homedir } = await import("node:os");
+      const { readFileSync, unlinkSync, existsSync } = await import("node:fs");
+      const codeTmpFile = join(homedir(), ".openclaw", "wechat-auth-code.tmp");
 
-        if (result.status === "scanned") {
-          runtime.log("[wechat-access] 已扫码，请在手机上确认...");
+      // 清理上次残留
+      try { unlinkSync(codeTmpFile); } catch { /* ignore */ }
+
+      runtime.log("=".repeat(60));
+      runtime.log("  扫码并在手机上确认后，浏览器会跳转到新页面。");
+      runtime.log("  请复制地址栏的完整 URL 或其中的 code 参数值，");
+      runtime.log("  然后在另一个终端窗口执行：");
+      runtime.log("");
+      runtime.log(`  echo "粘贴的URL或code" > ${codeTmpFile}`);
+      runtime.log("");
+      runtime.log("  本窗口会自动检测并完成登录。");
+      runtime.log("=".repeat(60));
+
+      // 5. 轮询临时文件
+      const deadline = Date.now() + 300_000; // 5 分钟超时
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 1500));
+
+        if (!existsSync(codeTmpFile)) continue;
+
+        let raw = "";
+        try {
+          raw = readFileSync(codeTmpFile, "utf-8").trim();
+          unlinkSync(codeTmpFile); // 读完即删
+        } catch { continue; }
+
+        if (!raw) continue;
+
+        // 从 URL 或裸 code 中提取 code
+        let code = raw;
+        if (raw.includes("code=")) {
+          try {
+            const url = new URL(raw);
+            const c = url.searchParams.get("code");
+            if (c) code = c;
+          } catch {
+            const match = raw.match(/[?&#]code=([^&#]+)/);
+            if (match?.[1]) code = match[1];
+          }
+        }
+
+        if (!code) {
+          runtime.log("[wechat-access] 未能从输入中提取 code，请重试");
           continue;
         }
 
-        if (result.status === "expired") {
-          throw new Error("二维码已过期，请重新执行登录");
+        // 6. 用 code 换 token
+        runtime.log(`[wechat-access] 收到 code: ${code.substring(0, 10)}...，正在获取 token...`);
+        const loginResult = await api.wxLogin(code, state);
+        if (!loginResult.success) {
+          throw new Error(`登录失败: ${loginResult.message ?? "未知错误"}`);
         }
 
-        if (result.status === "confirmed" && result.code) {
-          // 5. 用 code 换 token
-          runtime.log("[wechat-access] 授权成功，正在获取 token...");
-          const loginResult = await api.wxLogin(result.code, state);
-          if (!loginResult.success) {
-            throw new Error(`登录失败: ${loginResult.message ?? "未知错误"}`);
-          }
+        const loginData = loginResult.data as Record<string, unknown>;
+        const jwtToken = (loginData.token as string) || "";
+        const channelToken = (loginData.openclaw_channel_token as string) || "";
+        const userInfo = (loginData.user_info as Record<string, unknown>) || {};
 
-          const loginData = loginResult.data as Record<string, unknown>;
-          const jwtToken = (loginData.token as string) || "";
-          const channelToken = (loginData.openclaw_channel_token as string) || "";
-          const userInfo = (loginData.user_info as Record<string, unknown>) || {};
+        // 保存登录态
+        const persistedState: PersistedAuthState = {
+          jwtToken,
+          channelToken,
+          apiKey: "",
+          guid,
+          userInfo,
+          savedAt: Date.now(),
+        };
+        saveState(persistedState, authStatePath);
 
-          // 保存登录态
-          const persistedState: PersistedAuthState = {
-            jwtToken,
-            channelToken,
-            apiKey: "",
-            guid,
-            userInfo,
-            savedAt: Date.now(),
-          };
-          saveState(persistedState, authStatePath);
-
-          // 创建 API Key（非致命）
-          api.jwtToken = jwtToken;
-          api.userId = String(userInfo.user_id ?? "");
-          try {
-            const keyResult = await api.createApiKey();
-            if (keyResult.success) {
-              const apiKey =
-                (nested(keyResult.data, "key") as string) ??
-                (nested(keyResult.data, "resp", "data", "key") as string) ??
-                "";
-              if (apiKey) {
-                persistedState.apiKey = apiKey;
-                saveState(persistedState, authStatePath);
-              }
+        // 创建 API Key（非致命）
+        api.jwtToken = jwtToken;
+        api.userId = String(userInfo.user_id ?? "");
+        try {
+          const keyResult = await api.createApiKey();
+          if (keyResult.success) {
+            const apiKey =
+              (nested(keyResult.data, "key") as string) ??
+              (nested(keyResult.data, "resp", "data", "key") as string) ??
+              "";
+            if (apiKey) {
+              persistedState.apiKey = apiKey;
+              saveState(persistedState, authStatePath);
             }
-          } catch { /* non-fatal */ }
+          }
+        } catch { /* non-fatal */ }
 
-          const nickname = (userInfo.nickname as string) ?? "用户";
-          runtime.log(`[wechat-access] 登录成功! 欢迎 ${nickname}，token 已保存。请重启 Gateway 生效。`);
-          return;
-        }
-
-        // waiting / error → 继续轮询
+        const nickname = (userInfo.nickname as string) ?? "用户";
+        runtime.log(`[wechat-access] 登录成功! 欢迎 ${nickname}，token 已保存。请重启 Gateway 生效。`);
+        return;
       }
-      throw new Error("登录超时（3 分钟），请重试");
+      // 超时清理
+      try { unlinkSync(codeTmpFile); } catch { /* ignore */ }
+      throw new Error("登录超时（5 分钟），请重试");
     },
   },
 
