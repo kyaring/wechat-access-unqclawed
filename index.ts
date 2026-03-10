@@ -81,6 +81,112 @@ const tencentAccessPlugin = {
     },
   },
 
+  // 认证适配器：openclaw channels login --channel wechat-access-unqclawed
+  auth: {
+    login: async ({ cfg, accountId, runtime }: { cfg: any; accountId?: string; runtime: any; verbose?: boolean; channelInput?: string }) => {
+      const channelCfg = cfg?.channels?.["wechat-access-unqclawed"];
+      const envName = channelCfg?.environment ? String(channelCfg.environment) : "production";
+      const bypassInvite = channelCfg?.bypassInvite === true;
+      const authStatePath = channelCfg?.authStatePath ? String(channelCfg.authStatePath) : undefined;
+
+      const env = getEnvironment(envName);
+      const guid = getDeviceGuid();
+
+      // 1. 获取 OAuth state
+      runtime.log("[wechat-access] 获取登录 state...");
+      const api = new QClawAPI(env, guid);
+      const stateResult = await api.getWxLoginState();
+      let state = String(Math.floor(Math.random() * 10000));
+      if (stateResult.success) {
+        const s = nested(stateResult.data, "state") as string | undefined;
+        if (s) state = s;
+      }
+
+      // 2. 构造 auth URL → 抓取 QR 页面拿 uuid
+      runtime.log("[wechat-access] 生成微信登录二维码...");
+      const authUrl = buildAuthUrl(state, env);
+      const uuid = await fetchQrUuid(authUrl);
+
+      // 3. 终端显示 QR 码
+      try {
+        const qrterm = await import("qrcode-terminal");
+        const generate = qrterm.default?.generate ?? qrterm.generate;
+        const qrContent = `https://open.weixin.qq.com/connect/confirm?uuid=${uuid}`;
+        generate(qrContent, { small: true }, (qrcode: string) => {
+          runtime.log("\n" + qrcode);
+        });
+      } catch {
+        runtime.log("(qrcode-terminal 不可用，请用浏览器打开下方链接)");
+      }
+      runtime.log(`\n或在浏览器打开: ${authUrl}\n`);
+
+      // 4. 轮询等待扫码
+      runtime.log("[wechat-access] 等待微信扫码...");
+      const deadline = Date.now() + 180_000; // 3 分钟超时
+      while (Date.now() < deadline) {
+        const result = await pollQrStatus(uuid);
+
+        if (result.status === "scanned") {
+          runtime.log("[wechat-access] 已扫码，请在手机上确认...");
+          continue;
+        }
+
+        if (result.status === "expired") {
+          throw new Error("二维码已过期，请重新执行登录");
+        }
+
+        if (result.status === "confirmed" && result.code) {
+          // 5. 用 code 换 token
+          runtime.log("[wechat-access] 授权成功，正在获取 token...");
+          const loginResult = await api.wxLogin(result.code, state);
+          if (!loginResult.success) {
+            throw new Error(`登录失败: ${loginResult.message ?? "未知错误"}`);
+          }
+
+          const loginData = loginResult.data as Record<string, unknown>;
+          const jwtToken = (loginData.token as string) || "";
+          const channelToken = (loginData.openclaw_channel_token as string) || "";
+          const userInfo = (loginData.user_info as Record<string, unknown>) || {};
+
+          // 保存登录态
+          const persistedState: PersistedAuthState = {
+            jwtToken,
+            channelToken,
+            apiKey: "",
+            guid,
+            userInfo,
+            savedAt: Date.now(),
+          };
+          saveState(persistedState, authStatePath);
+
+          // 创建 API Key（非致命）
+          api.jwtToken = jwtToken;
+          api.userId = String(userInfo.user_id ?? "");
+          try {
+            const keyResult = await api.createApiKey();
+            if (keyResult.success) {
+              const apiKey =
+                (nested(keyResult.data, "key") as string) ??
+                (nested(keyResult.data, "resp", "data", "key") as string) ??
+                "";
+              if (apiKey) {
+                persistedState.apiKey = apiKey;
+                saveState(persistedState, authStatePath);
+              }
+            }
+          } catch { /* non-fatal */ }
+
+          const nickname = (userInfo.nickname as string) ?? "用户";
+          runtime.log(`[wechat-access] 登录成功! 欢迎 ${nickname}，token 已保存。请重启 Gateway 生效。`);
+          return;
+        }
+
+        // waiting / error → 继续轮询
+      }
+      throw new Error("登录超时（3 分钟），请重试");
+    },
+  },
+
   // 出站适配器（必需）
   outbound: {
     deliveryMode: "direct" as const,
