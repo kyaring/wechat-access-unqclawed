@@ -122,7 +122,10 @@ export class QClawAPI {
   async refreshChannelToken(): Promise<string | null> {
     const result = await this.post("data/4058/forward", {});
     if (result.success) {
-      return (result.data as Record<string, unknown>)?.openclaw_channel_token as string ?? null;
+      const d = result.data as Record<string, unknown>;
+      return (nested(d, "openclaw_channel_token") as string)
+        || (nested(d, "data", "openclaw_channel_token") as string)
+        || null;
     }
     return null;
   }

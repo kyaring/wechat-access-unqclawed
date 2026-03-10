@@ -177,9 +177,21 @@ const tencentAccessPlugin = {
         }
 
         const loginData = loginResult.data as Record<string, unknown>;
-        const jwtToken = (loginData.token as string) || "";
-        const channelToken = (loginData.openclaw_channel_token as string) || "";
-        const userInfo = (loginData.user_info as Record<string, unknown>) || {};
+        // 在多层级搜索关键字段（post() 提取可能取到错误层级）
+        const jwtToken =
+          (nested(loginData, "token") as string) ||
+          (nested(loginData, "data", "token") as string) ||
+          "";
+        const channelToken =
+          (nested(loginData, "openclaw_channel_token") as string) ||
+          (nested(loginData, "data", "openclaw_channel_token") as string) ||
+          "";
+        const userInfo =
+          (nested(loginData, "user_info") as Record<string, unknown>) ||
+          (nested(loginData, "data", "user_info") as Record<string, unknown>) ||
+          {};
+
+        runtime.log(`[wechat-access] wxLogin 响应: jwtToken=${jwtToken ? jwtToken.substring(0, 8) + "..." : "(空)"}, channelToken=${channelToken ? channelToken.substring(0, 8) + "..." : "(空)"}, userId=${(nested(userInfo, "user_id") ?? "(无)")}`);
 
         // 更新 loginKey（服务端可能返回新值，后续 API 调用需要）
         const loginKey = userInfo.loginKey as string | undefined;
@@ -542,9 +554,18 @@ const tencentAccessPlugin = {
           }
 
           const loginData = loginResult.data as Record<string, unknown>;
-          const jwtToken = (loginData.token as string) || "";
-          const channelToken = (loginData.openclaw_channel_token as string) || "";
-          const userInfo = (loginData.user_info as Record<string, unknown>) || {};
+          const jwtToken =
+            (nested(loginData, "token") as string) ||
+            (nested(loginData, "data", "token") as string) ||
+            "";
+          const channelToken =
+            (nested(loginData, "openclaw_channel_token") as string) ||
+            (nested(loginData, "data", "openclaw_channel_token") as string) ||
+            "";
+          const userInfo =
+            (nested(loginData, "user_info") as Record<string, unknown>) ||
+            (nested(loginData, "data", "user_info") as Record<string, unknown>) ||
+            {};
 
           // 更新 loginKey（服务端可能返回新值，后续 API 调用需要）
           const loginKey = userInfo.loginKey as string | undefined;
