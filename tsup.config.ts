@@ -12,6 +12,7 @@ export default defineConfig({
     "fast-xml-parser",
     "undici",
     "zod",
+    "centrifuge",
   ],
   // openclaw is provided by host; qrcode-terminal is optional (dynamic import)
   external: ["openclaw", "qrcode-terminal"],

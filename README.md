@@ -1,117 +1,123 @@
-# wechat-access-unqclawed
+# wechat-openclaw-channel
 
-OpenClaw 微信通路插件 — 通过 WeChat OAuth 扫码登录获取 token，连接 AGP WebSocket 网关收发消息。
+> **v1.1.0 — 现已支持 WorkBuddy 模式！** 无需内测码，通过 WorkBuddy 账号即可登录使用。
+
+OpenClaw 微信通路插件 — 支持 QClaw 和 WorkBuddy 双模式。
 
 ## 安装
 
 ```bash
-openclaw plugins install @henryxiaoyang/wechat-access-unqclawed
+openclaw plugins install @henryxiaoyang/wechat-openclaw-channel
 ```
 
-启用渠道：
+## 快速开始
+
+### 1. 登录
 
 ```bash
-openclaw config set channels.wechat-access-unqclawed.enabled true
+openclaw wechat login
 ```
 
-## 首次登录
+交互式选择登录模式：
 
-```bash
-openclaw channels login --channel wechat-access-unqclawed
-```
+- **QClaw** — 微信扫码登录 **目前需要内测码。**
+- **WorkBuddy** — CodeBuddy OAuth 登录
 
-终端会显示微信二维码（或浏览器链接），用微信扫码并确认后，浏览器会跳转到新页面，地址栏 URL 形如：
-
-```
-https://security.guanjia.qq.com/login?code=001j6y000...&state=64c077c4e078...
-```
-
-复制 `code=` 后面的值（到 `&` 之前），在**另一个终端窗口**写入临时文件：
-
-```bash
-echo "001j6y0000MiZV1uYB300cEYDG1j6y0x" > ~/.openclaw/wechat-auth-code.tmp
-```
-
-也可以直接粘贴完整 URL，会自动提取 `code`：
-
-```bash
-echo "https://security.guanjia.qq.com/login?code=001j6y0000MiZV1uYB300cEYDG1j6y0x&state=64c077..." > ~/.openclaw/wechat-auth-code.tmp
-```
-
-原窗口会自动检测并完成登录，token 自动保存。然后重启 Gateway：
+### 2. 启动 Gateway
 
 ```bash
 openclaw gateway restart
 ```
 
-## 功能
+### 3. 设备绑定（首次使用）
 
-- 微信扫码登录（终端二维码 + 浏览器链接）
-- Token 自动持久化，重启免登录
-- AGP 协议 WebSocket 双向通信（流式文本、工具调用）
-- 邀请码验证（可配置跳过）
-- 支持生产/测试环境切换
+```bash
+openclaw wechat bind
+```
+
+在微信中打开返回的链接完成绑定，绑定后即可通过微信对话。
+
+## 登录模式
+
+### QClaw 模式
+
+通过微信平台 OAuth 获取 token，连接 WebSocket 网关。**目前需要内测码。**
+
+### WorkBuddy 模式 （推荐）
+
+通过 CodeBuddy OAuth 获取 token，连接 WebSocket 网关。不需要内测码。
+
+## CLI 命令
+
+| 命令 | 说明 |
+|------|------|
+| `openclaw wechat login` | 交互式登录（选择 QClaw 或 WorkBuddy） |
+| `openclaw wechat logout` | 清除登录态 |
+| `openclaw wechat bind` | 获取设备绑定链接 |
 
 ## 配置
 
-在 OpenClaw 配置文件的 `channels.wechat-access-unqclawed` 下：
+凭证统一存储在 `~/.openclaw/openclaw.json` 的 `channels.wechat-openclaw-channel` 下：
 
 ```json
 {
   "channels": {
-    "wechat-access-unqclawed": {
-      "enabled": true,
-      "token": "",
-      "wsUrl": "",
-      "bypassInvite": false,
-      "environment": "production"
+    "wechat-openclaw-channel": {
+      "loginMode": "workbuddy",
+      "environment": "production",
+      "qclaw": {
+        "jwtToken": "...",
+        "channelToken": "...",
+        "apiKey": "...",
+        "guid": "...",
+        "userId": "...",
+        "wsUrl": "...",
+        "userInfo": {}
+      },
+      "workbuddy": {
+        "accessToken": "...",
+        "refreshToken": "...",
+        "userId": "...",
+        "hostId": "...",
+        "baseUrl": "https://copilot.tencent.com",
+        "userInfo": {}
+      }
     }
   }
 }
 ```
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `enabled` | boolean | 启用渠道（必须设为 `true`） |
-| `token` | string | 手动指定 channel token（留空则走扫码登录） |
-| `wsUrl` | string | WebSocket 网关地址（留空使用环境默认值） |
-| `bypassInvite` | boolean | 跳过邀请码验证 |
-| `environment` | string | `production` 或 `test` |
-| `authStatePath` | string | 自定义 token 持久化路径 |
-
-## Token 获取策略
-
-1. 读取配置中的 `token` — 如果有，直接使用
-2. 读取本地保存的登录态（`~/.openclaw/wechat-access-auth.json`）
-3. 以上都没有 — 运行 `openclaw channels login --channel wechat-access-unqclawed` 手动登录
+| 字段 | 说明 |
+|------|------|
+| `loginMode` | 当前登录模式：`qclaw` 或 `workbuddy` |
+| `environment` | 环境：`production`（默认）或 `test` |
+| `qclaw` | QClaw 模式凭证（登录后自动写入） |
+| `workbuddy` | WorkBuddy 模式凭证（登录后自动写入） |
 
 ## 项目结构
 
 ```
-index.ts                 # 插件入口，注册渠道、CLI、启停 WebSocket
+index.ts                    # 插件入口，注册渠道、CLI、启停 WebSocket
 auth/
-  types.ts               # 认证相关类型
-  environments.ts        # 生产/测试环境配置
-  device-guid.ts         # 设备 GUID 生成（随机，持久化）
-  qclaw-api.ts           # QClaw JPRX 网关 API 客户端
-  state-store.ts         # Token 持久化
-  wechat-login.ts        # 扫码登录流程编排（交互式）
-  wechat-qr-poll.ts      # QR 码生成与轮询
+  types.ts                  # 认证相关类型（LoginMode, QClawCredentials, WorkBuddyCredentials）
+  environments.ts           # 生产/测试环境配置
+  device-guid.ts            # 设备 GUID 生成
+  qclaw-api.ts              # QClaw JPRX 网关 API 客户端
+  codebuddy-api.ts          # CodeBuddy (copilot.tencent.com) API 客户端
+  wechat-login.ts           # QClaw 扫码登录流程（交互式）
+  wechat-qr-poll.ts         # QR 码 URL 生成
+  device-bind.ts            # 设备绑定流程
 websocket/
-  types.ts               # AGP 协议类型
-  websocket-client.ts    # WebSocket 客户端（连接、心跳、重连）
-  message-handler.ts     # 消息处理（调用 Agent）
-  message-adapter.ts     # AGP <-> OpenClaw 消息适配
+  types.ts                  # AGP 协议类型
+  websocket-client.ts       # QClaw WebSocket 客户端
+  centrifuge-client.ts      # WorkBuddy Centrifuge WebSocket 客户端
+  message-handler.ts        # 消息处理（调用 Agent）
+  message-adapter.ts        # AGP ↔ OpenClaw 消息适配
 common/
-  runtime.ts             # OpenClaw 运行时单例
-  agent-events.ts        # Agent 事件订阅
-  message-context.ts     # 消息上下文构建
-http/                    # HTTP webhook 通道（备用）
+  runtime.ts                # OpenClaw 运行时单例
+  agent-events.ts           # Agent 事件订阅
+  message-context.ts        # 消息上下文构建
 ```
-
-## 协议
-
-AGP (Agent Gateway Protocol) — 基于 WebSocket Text 帧的 JSON 消息协议，详见 `websocket.md`。
 
 ## License
 

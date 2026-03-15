@@ -7,52 +7,24 @@
  */
 
 import { createInterface } from "node:readline";
-import type { QClawEnvironment, LoginCredentials, PersistedAuthState } from "./types.js";
+import type { QClawEnvironment, LoginCredentials } from "./types.js";
 import { QClawAPI } from "./qclaw-api.js";
-import { saveState } from "./state-store.js";
+import { buildAuthUrl } from "./wechat-qr-poll.js";
 import { nested } from "./utils.js";
-import { performDeviceBinding } from "./device-bind.js";
 
-/** 构造微信 OAuth2 授权 URL */
-const buildAuthUrl = (state: string, env: QClawEnvironment): string => {
-  const params = new URLSearchParams({
-    appid: env.wxAppId,
-    redirect_uri: env.wxLoginRedirectUri,
-    response_type: "code",
-    scope: "snsapi_login",
-    state,
-  });
-  return `https://open.weixin.qq.com/connect/qrconnect?${params.toString()}#wechat_redirect`;
-};
+export interface PerformLoginOptions {
+  guid: string;
+  env: QClawEnvironment;
+  /** 邀请码（留空尝试跳过验证） */
+  inviteCode?: string;
+  /** 日志函数 */
+  log?: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void; error: (...args: unknown[]) => void };
+}
 
-/** 在终端显示二维码 */
-const displayQrCode = async (url: string): Promise<void> => {
-  console.log("");
-  console.log("=".repeat(64));
-  console.log("请用微信扫描下方二维码登录");
-  console.log("=".repeat(64));
-
-  try {
-    const qrterm = await import("qrcode-terminal");
-    const generate = qrterm.default?.generate ?? qrterm.generate;
-    generate(url, { small: true }, (qrcode: string) => {
-      console.log(qrcode);
-    });
-  } catch {
-    console.log("\n(未安装 qrcode-terminal，无法在终端显示二维码)");
-    console.log("请安装: npm install qrcode-terminal");
-  }
-
-  console.log("");
-  console.log("或者在浏览器中打开以下链接：");
-  console.log(url);
-  console.log("=".repeat(64));
-};
-
-/** 从 stdin 读取一行 */
-const readLine = (prompt: string): Promise<string> => {
+/** 通过 readline 交互式等待用户输入 */
+const askInput = (prompt: string): Promise<string> => {
   const rl = createInterface({ input: process.stdin, output: process.stdout });
-  return new Promise((resolve) => {
+  return new Promise<string>((resolve) => {
     rl.question(prompt, (answer) => {
       rl.close();
       resolve(answer.trim());
@@ -61,74 +33,19 @@ const readLine = (prompt: string): Promise<string> => {
 };
 
 /**
- * 等待用户输入微信授权后重定向 URL 中的 code
- *
- * 接受两种输入：
- * 1. 完整 URL（自动从 query string 或 fragment 提取 code）
- * 2. 裸 code 字符串
- */
-const waitForAuthCode = async (): Promise<string> => {
-  console.log();
-  console.log("微信扫码授权后，浏览器会跳转到新页面，地址栏 URL 形如：");
-  console.log("https://security.guanjia.qq.com/login?code=0a1B2c...&state=xxx");
-  console.log();
-  console.log("请复制 code= 后面的值（到 & 之前），或直接粘贴完整 URL。");
-  console.log();
-
-  const raw = await readLine("请粘贴 code 值或完整 URL: ");
-  if (!raw) return "";
-
-  // 去掉 shell 转义残留的反斜杠，如 \? \= \&
-  const cleaned = raw.replace(/\\([?=&#])/g, "$1");
-
-  // 尝试从 URL 中提取 code
-  if (cleaned.includes("code=")) {
-    try {
-      const url = new URL(cleaned);
-      // 先查 query string
-      const code = url.searchParams.get("code");
-      if (code) return code;
-      // 再查 fragment（微信可能将 code 放在 hash 后面）
-      if (url.hash) {
-        const fragmentParams = new URLSearchParams(url.hash.replace(/^#/, ""));
-        const fCode = fragmentParams.get("code");
-        if (fCode) return fCode;
-      }
-    } catch {
-      // URL 解析失败，尝试正则
-    }
-    const match = cleaned.match(/[?&#]code=([^&#]+)/);
-    if (match?.[1]) return match[1];
-  }
-
-  // 直接就是 code
-  return cleaned;
-};
-
-export interface PerformLoginOptions {
-  guid: string;
-  env: QClawEnvironment;
-  bypassInvite?: boolean;
-  /** 自定义 state 文件路径 */
-  authStatePath?: string;
-  /** 日志函数 */
-  log?: { info: (...args: unknown[]) => void; warn: (...args: unknown[]) => void; error: (...args: unknown[]) => void };
-}
-
-/**
  * 执行完整的微信扫码登录流程
  *
  * 步骤：
  * 1. 获取 OAuth state
  * 2. 生成二维码并展示
- * 3. 等待用户输入 code
+ * 3. 等待用户输入 code（通过文件轮询）
  * 4. 用 code 换 token
  * 5. 创建 API Key（非致命）
- * 6. 邀请码检查（可绕过）
+ * 6. 邀请码检查
  * 7. 保存登录态
  */
 export const performLogin = async (options: PerformLoginOptions): Promise<LoginCredentials> => {
-  const { guid, env, bypassInvite = false, authStatePath, log } = options;
+  const { guid, env, inviteCode, log } = options;
   const info = (...args: unknown[]) => log?.info?.(...args) ?? console.log(...args);
   const warn = (...args: unknown[]) => log?.warn?.(...args) ?? console.warn(...args);
 
@@ -144,16 +61,54 @@ export const performLogin = async (options: PerformLoginOptions): Promise<LoginC
   }
   info(`[Login] state=${state}`);
 
-  // 2. 生成二维码
-  info("[Login] 步骤 2/5: 生成微信登录二维码...");
+  // 2. 生成二维码 URL
+  info("[Login] 步骤 2/5: 请在浏览器中打开以下链接，并用手机微信扫码登录...");
   const authUrl = buildAuthUrl(state, env);
-  await displayQrCode(authUrl);
-
-  // 3. 等待 code
+  info("");
+  info(authUrl);
+  info("");
+  // 3. 等待 code（交互式输入）
   info("[Login] 步骤 3/5: 等待微信扫码授权...");
-  const code = await waitForAuthCode();
-  if (!code) {
+  info("");
+  info("扫码并在手机上确认后，浏览器会跳转到新页面。");
+  info("地址栏 URL 形如：");
+  info("");
+  info("  https://security.guanjia.qq.com/login?code=0a1B2c...&state=xxx");
+  info("");
+  info("请复制 code= 后面的值（到 & 之前），或直接粘贴完整 URL。");
+
+  let code = "";
+  const raw = await askInput("\n请粘贴 code 或完整 URL: ");
+
+  if (!raw) {
     throw new Error("未获取到授权 code");
+  }
+
+  // 去掉 shell 转义残留的反斜杠
+  const cleaned = raw.replace(/\\([?=&#])/g, "$1");
+
+  // 检查是否误粘贴了扫码页面 URL（而非回调 URL）
+  if (cleaned.includes("open.weixin.qq.com/connect/qrconnect")) {
+    throw new Error("这是扫码页面的 URL，不是回调 URL。请先在浏览器中打开此链接扫码，扫码确认后浏览器会跳转到新页面，再复制新页面地址栏中的 URL。");
+  }
+
+  // 从 URL 或裸 code 中提取 code
+  if (cleaned.includes("code=")) {
+    try {
+      const url = new URL(cleaned);
+      const c = url.searchParams.get("code");
+      if (c) code = c;
+    } catch {
+      const match = cleaned.match(/[?&#]code=([^&#]+)/);
+      if (match?.[1]) code = match[1];
+    }
+  }
+
+  if (!code) code = cleaned;
+
+  // 基本校验：code 不应该是 URL
+  if (code.startsWith("http")) {
+    throw new Error("无法从 URL 中提取 code。请确认粘贴的是扫码确认后跳转页面的 URL。");
   }
 
   // 4. 用 code 换 token
@@ -196,32 +151,32 @@ export const performLogin = async (options: PerformLoginOptions): Promise<LoginC
 
   // 邀请码检查
   const userId = String(userInfo.user_id ?? "");
-  if (userId && !bypassInvite) {
+  if (userId) {
     try {
       const check = await api.checkInviteCode(userId);
       if (check.success) {
         const verified = nested(check.data, "already_verified");
         if (!verified) {
-          info("\n[Login] 需要邀请码验证。");
-          const inviteCode = await readLine("请输入邀请码: ");
-          if (inviteCode) {
-            const submitResult = await api.submitInviteCode(userId, inviteCode);
-            if (!submitResult.success) {
-              throw new Error(`邀请码验证失败: ${submitResult.message}`);
-            }
-            info("[Login] 邀请码验证通过!");
+          let codeToSubmit = inviteCode;
+          if (codeToSubmit === undefined) {
+            info("");
+            info("需要邀请码验证。没有邀请码可按回车跳过。");
+            codeToSubmit = await askInput("请输入邀请码: ");
           }
+          const submitResult = await api.submitInviteCode(userId, codeToSubmit ?? "");
+          if (!submitResult.success) {
+            throw new Error(`邀请码验证失败: ${submitResult.message}`);
+          }
+          info("[Login] 邀请码验证通过!");
         }
       }
     } catch (e) {
       if (e instanceof Error && e.message.includes("邀请码验证失败")) throw e;
       warn(`[Login] 邀请码检查失败（非致命）: ${e}`);
     }
-  } else if (bypassInvite) {
-    info("[Login] 已跳过邀请码验证 (bypassInvite=true)");
   }
 
-  // 保存登录态
+  // 返回登录凭证（由调用方负责持久化到 openclaw.json）
   const credentials: LoginCredentials = {
     jwtToken,
     channelToken,
@@ -230,29 +185,7 @@ export const performLogin = async (options: PerformLoginOptions): Promise<LoginC
     guid,
   };
 
-  const persistedState: PersistedAuthState = {
-    jwtToken,
-    channelToken,
-    apiKey,
-    guid,
-    userInfo,
-    savedAt: Date.now(),
-  };
-  saveState(persistedState, authStatePath);
-  info("[Login] 登录态已保存");
-
-  // 设备绑定：生成企微客服链接，用户在微信中打开后才有对话入口
-  info("[Login] 开始设备绑定...");
-  const bindResult = await performDeviceBinding({
-    api,
-    log: log ?? { info: console.log, warn: console.warn, error: console.error },
-  });
-  if (bindResult.success) {
-    info(`[Login] ${bindResult.message}`);
-  } else {
-    warn(`[Login] ${bindResult.message}`);
-    warn("[Login] 可稍后重新执行登录命令完成绑定。");
-  }
+  info("[Login] 登录完成");
 
   return credentials;
 };

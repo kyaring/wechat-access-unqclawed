@@ -6,15 +6,17 @@
 export type {
   QClawEnvironment,
   LoginCredentials,
-  PersistedAuthState,
   QClawApiResponse,
+  LoginMode,
+  QClawCredentials,
+  WorkBuddyCredentials,
 } from "./types.js";
 export { TokenExpiredError } from "./types.js";
 
 export { getEnvironment } from "./environments.js";
 export { getDeviceGuid } from "./device-guid.js";
 export { QClawAPI } from "./qclaw-api.js";
-export { loadState, saveState, clearState } from "./state-store.js";
+export { CodeBuddyAPI } from "./codebuddy-api.js";
 export { performLogin } from "./wechat-login.js";
 export type { PerformLoginOptions } from "./wechat-login.js";
 export { performDeviceBinding } from "./device-bind.js";

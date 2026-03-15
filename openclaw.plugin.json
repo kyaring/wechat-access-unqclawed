@@ -1,36 +1,33 @@
 {
-  "id": "wechat-access-unqclawed",
+  "id": "wechat-openclaw-channel",
   "name": "WeChat Access",
-  "description": "微信通路插件 — 扫码登录 + AGP WebSocket 双向通信",
-  "version": "1.0.0",
-  "channels": ["wechat-access-unqclawed"],
+  "description": "OpenClaw 微信通路插件 — 支持 QClaw 和 WorkBuddy 双模式",
+  "version": "1.1.0",
+  "channels": ["wechat-openclaw-channel"],
   "configSchema": {
     "type": "object",
     "properties": {
       "enabled": {
         "type": "boolean",
-        "description": "是否启用服务号渠道"
+        "description": "是否启用渠道"
       },
-      "token": {
+      "loginMode": {
         "type": "string",
-        "description": "WebSocket 连接 token（手动配置时使用，留空走扫码登录）"
-      },
-      "wsUrl": {
-        "type": "string",
-        "description": "WebSocket 网关地址（留空使用环境默认值）"
-      },
-      "bypassInvite": {
-        "type": "boolean",
-        "description": "跳过邀请码验证"
-      },
-      "authStatePath": {
-        "type": "string",
-        "description": "自定义 token 持久化路径"
+        "enum": ["qclaw", "workbuddy"],
+        "description": "登录模式：qclaw 或 workbuddy"
       },
       "environment": {
         "type": "string",
         "enum": ["production", "test"],
-        "description": "API 环境（production / test）"
+        "description": "环境（默认 production）"
+      },
+      "qclaw": {
+        "type": "object",
+        "description": "QClaw 模式凭证（登录后自动写入）"
+      },
+      "workbuddy": {
+        "type": "object",
+        "description": "WorkBuddy 模式凭证（登录后自动写入）"
       },
       "accounts": {
         "type": "object",

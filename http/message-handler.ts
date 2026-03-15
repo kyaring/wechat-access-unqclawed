@@ -103,7 +103,7 @@ export const handleMessage = async (message: FuwuhaoMessage): Promise<string | n
   // runtime.channel.activity.record 记录频道的活动统计
   // 用于监控、分析、计费等场景
   runtime.channel.activity.record({
-    channel: "wechat-access-unqclawed",      // 频道标识
+    channel: "wechat-openclaw-channel",      // 频道标识
     accountId: "default",    // 账号 ID
     direction: "inbound",    // 方向：inbound=入站（用户发送），outbound=出站（Bot 回复）
   });
@@ -196,7 +196,7 @@ export const handleMessage = async (message: FuwuhaoMessage): Promise<string | n
 
           // 记录出站活动统计（Bot 回复）
           runtime.channel.activity.record({
-            channel: "wechat-access-unqclawed",
+            channel: "wechat-openclaw-channel",
             accountId: "default",
             direction: "outbound",  // 出站：Bot 发送给用户
           });
@@ -322,7 +322,7 @@ export const handleMessageStream = async (
   // 4. 记录频道活动统计
   // ============================================
   runtime.channel.activity.record({
-    channel: "wechat-access-unqclawed",
+    channel: "wechat-openclaw-channel",
     accountId: "default",
     direction: "inbound",
   });
@@ -519,7 +519,7 @@ const unsubscribeAgentEvents = onAgentEvent((evt: AgentEventPayload) => {
 
           // 记录出站活动
           runtime.channel.activity.record({
-            channel: "wechat-access-unqclawed",
+            channel: "wechat-openclaw-channel",
             accountId: "default",
             direction: "outbound",
           });

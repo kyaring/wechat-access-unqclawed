@@ -1,7 +1,10 @@
 /**
  * @file types.ts
- * @description 微信扫码登录相关类型定义
+ * @description 登录相关类型定义
  */
+
+/** 登录模式 */
+export type LoginMode = "qclaw" | "workbuddy";
 
 /** QClaw 环境配置 */
 export interface QClawEnvironment {
@@ -31,14 +34,25 @@ export interface LoginCredentials {
   guid: string;
 }
 
-/** 持久化的登录态 */
-export interface PersistedAuthState {
+/** QClaw 模式凭证（存储在 openclaw.json） */
+export interface QClawCredentials {
   jwtToken: string;
   channelToken: string;
   apiKey: string;
   guid: string;
+  userId: string;
+  wsUrl?: string;
   userInfo: Record<string, unknown>;
-  savedAt: number;
+}
+
+/** WorkBuddy 模式凭证（存储在 openclaw.json） */
+export interface WorkBuddyCredentials {
+  accessToken: string;
+  refreshToken: string;
+  userId: string;
+  hostId: string;
+  baseUrl?: string;
+  userInfo: Record<string, unknown>;
 }
 
 /** QClaw API 通用响应 */

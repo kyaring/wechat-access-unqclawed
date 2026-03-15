@@ -135,7 +135,7 @@ export class QClawAPI {
     return null;
   }
 
-  /** 生成企微客服专属链接 (cmd_id=4018) */
+  /** 生成微信服务号客服专属链接 (cmd_id=4018) */
   async generateContactLink(openKfId: string): Promise<QClawApiResponse> {
     return this.post("data/4018/forward", {
       guid: this.guid,

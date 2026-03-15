@@ -24,10 +24,13 @@ export type {
   WebSocketClientConfig,
   ConnectionState,
   WebSocketClientCallbacks,
+  GatewayClient,
 } from "./types.js";
 
 // WebSocket 客户端
 export { WechatAccessWebSocketClient } from "./websocket-client.js";
+export { CentrifugeGatewayClient } from "./centrifuge-client.js";
+export type { CentrifugeClientConfig } from "./centrifuge-client.js";
 
 // 消息处理器
 export { handlePrompt, handleCancel } from "./message-handler.js";

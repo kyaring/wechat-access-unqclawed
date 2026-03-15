@@ -1,6 +1,6 @@
 /**
  * @file device-bind.ts
- * @description 设备绑定流程：生成企微客服链接 → 用户在微信中打开 → 轮询绑定状态
+ * @description 设备绑定流程：生成微信服务号客服链接 → 用户在微信中打开 → 轮询绑定状态
  *
  * 登录拿到 token 后，微信里还看不到对话入口。
  * 必须通过客服链接完成设备绑定，微信中才会出现聊天入口。
@@ -9,7 +9,7 @@
 import type { QClawAPI } from "./qclaw-api.js";
 import { nested } from "./utils.js";
 
-/** 默认的企微客服 open_kfid */
+/** 默认的微信服务号客服 open_kfid */
 const DEFAULT_OPEN_KFID = "wkzLlJLAAAfbxEV3ZcS-lHZxkaKmpejQ";
 
 /** 轮询间隔（毫秒） */
@@ -21,7 +21,7 @@ const DEFAULT_TIMEOUT_MS = 300_000; // 5 分钟
 export interface DeviceBindOptions {
   /** 已认证的 QClawAPI 实例 */
   api: QClawAPI;
-  /** 企微客服 open_kfid（可选，有默认值） */
+  /** 微信服务号客服 open_kfid（可选，有默认值） */
   openKfId?: string;
   /** 轮询超时（毫秒） */
   timeoutMs?: number;
@@ -65,9 +65,9 @@ async function defaultShowQr(url: string): Promise<void> {
  * 执行设备绑定流程
  *
  * 步骤：
- * 1. 调用 4018 接口生成企微客服链接
+ * 1. 调用接口生成微信服务号客服链接
  * 2. 展示链接（终端 QR / URL）供用户在微信中打开
- * 3. 轮询 4019 接口等待绑定完成
+ * 3. 轮询接口等待绑定完成
  */
 export async function performDeviceBinding(options: DeviceBindOptions): Promise<DeviceBindResult> {
   const {
@@ -78,8 +78,8 @@ export async function performDeviceBinding(options: DeviceBindOptions): Promise<
     showQr = defaultShowQr,
   } = options;
 
-  // 1. 生成企微客服链接
-  log.info("[device-bind] 生成企微客服链接...");
+  // 1. 生成客服链接
+  log.info("[device-bind] 生成客服链接...");
   let linkResult;
   try {
     linkResult = await api.generateContactLink(openKfId);
@@ -111,8 +111,8 @@ export async function performDeviceBinding(options: DeviceBindOptions): Promise<
   // 2. 展示链接
   console.log("");
   console.log("=".repeat(64));
-  console.log("请用「控制端微信」打开下方链接，完成设备绑定");
-  console.log("绑定后微信中会出现对话入口");
+  console.log("请在手机上用微信打开下方链接，完成设备绑定");
+  console.log("绑定后微信会跳转到对话入口");
   console.log("=".repeat(64));
   await showQr(contactUrl);
   console.log(`\n链接: ${contactUrl}\n`);

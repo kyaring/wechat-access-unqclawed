@@ -1,13 +1,13 @@
 {
-  "name": "@henryxiaoyang/wechat-access-unqclawed",
-  "version": "1.0.20",
+  "name": "@henryxiaoyang/wechat-openclaw-channel",
+  "version": "1.1.0",
   "type": "module",
-  "description": "OpenClaw 微信通路插件 — 扫码登录 + AGP WebSocket 双向通信",
+  "description": "OpenClaw 微信通路插件 — 支持 QClaw 和 WorkBuddy 双模式",
   "author": "HenryXiaoYang",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HenryXiaoYang/wechat-access-unqclawed.git"
+    "url": "https://github.com/HenryXiaoYang/wechat-openclaw-channel.git"
   },
   "scripts": {
     "build": "tsup"
@@ -22,29 +22,31 @@
       "./dist/index.js"
     ],
     "channel": {
-      "id": "wechat-access-unqclawed",
-      "label": "wechat-access-unqclawed",
-      "selectionLabel": "WeCom (plugin)",
-      "detailLabel": "WeCom Bot",
-      "docsPath": "/channels/wechat-access",
-      "docsLabel": "wechat-access-unqclawed",
-      "blurb": "Enterprise WeCom intelligent bot (API mode) via encrypted webhooks + passive replies.",
+      "id": "wechat-openclaw-channel",
+      "label": "微信通路",
+      "selectionLabel": "微信通路",
+      "detailLabel": "微信通路",
+      "docsPath": "/channels/wechat-openclaw-channel",
+      "docsLabel": "wechat-openclaw-channel",
+      "blurb": "微信通路插件，支持 QClaw 和 WorkBuddy 双模式",
       "aliases": [
-        "wechatwork",
-        "wework",
+        "openclaw",
+        "wechat",
+        "微信",
         "服务号",
-        "企微",
-        "企业微信"
+        "workbuddy",
+        "qclaw"
       ],
       "order": 85
     },
     "install": {
-      "npmSpec": "@henryxiaoyang/wechat-access-unqclawed",
-      "localPath": "extensions/wechat-access",
+      "npmSpec": "@henryxiaoyang/wechat-openclaw-channel",
+      "localPath": "extensions/wechat-openclaw-channel",
       "defaultChoice": "npm"
     }
   },
   "dependencies": {
+    "centrifuge": "^5.5.3",
     "fast-xml-parser": "^5.4.1",
     "qrcode-terminal": "^0.12.0",
     "undici": "^7.20.0",

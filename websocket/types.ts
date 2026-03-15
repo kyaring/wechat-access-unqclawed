@@ -288,3 +288,18 @@ export interface WebSocketClientCallbacks {
   /** 发生错误 */
   onError?: (error: Error) => void;
 }
+
+/**
+ * 网关客户端公共接口
+ * WechatAccessWebSocketClient 和 CentrifugeGatewayClient 均实现此接口，
+ * 使 handlePrompt / handleCancel 可以无差别地使用任一客户端。
+ */
+export interface GatewayClient {
+  sendMessageChunk(sessionId: string, promptId: string, content: ContentBlock, guid?: string, userId?: string): void;
+  sendToolCall(sessionId: string, promptId: string, toolCall: ToolCall, guid?: string, userId?: string): void;
+  sendToolCallUpdate(sessionId: string, promptId: string, toolCall: ToolCall, guid?: string, userId?: string): void;
+  sendPromptResponse(payload: PromptResponsePayload, guid?: string, userId?: string): void;
+  start(): void;
+  stop(): void;
+  getState(): ConnectionState;
+}

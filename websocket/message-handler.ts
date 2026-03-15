@@ -17,7 +17,7 @@ import type {
   ToolCall,
 } from "./types.js";
 import { onAgentEvent, type AgentEventPayload } from "../common/agent-events.js";
-import type { WechatAccessWebSocketClient } from "./websocket-client.js";
+import type { GatewayClient } from "./types.js";
 
 /** 内容安全审核拦截标记，由 content-security 插件的 fetch 拦截器嵌入伪 SSE 响应中 */
 const SECURITY_BLOCK_MARKER = "<!--CONTENT_SECURITY_BLOCK-->";
@@ -107,7 +107,7 @@ const activeTurns = new Map<string, ActiveTurn>();
  */
 export const handlePrompt = async (
   message: PromptMessage,
-  client: WechatAccessWebSocketClient
+  client: GatewayClient
 ): Promise<void> => {
   const { payload } = message;
   const { session_id: sessionId, prompt_id: promptId } = payload;
@@ -210,7 +210,7 @@ export const handlePrompt = async (
      * 这些统计数据用于 OpenClaw 控制台的活动监控面板。
      */
     runtime.channel.activity.record({
-      channel: "wechat-access-unqclawed",
+      channel: "wechat-openclaw-channel",
       accountId: route.accountId ?? "default",
       direction: "inbound",
     });
@@ -403,7 +403,7 @@ export const handlePrompt = async (
      * 注意：此函数是 async 的，会等待 Agent 完全处理完毕才 resolve。
      * 在等待期间，步骤 5 注册的 onAgentEvent 回调会持续被触发（流式推送）。
      */
-    const { queuedFinal } = await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+    await runtime.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
       ctx,
       cfg,
       dispatcherOptions: {
@@ -449,7 +449,7 @@ export const handlePrompt = async (
 
           // 记录出站活动统计（每次 deliver 都算一次出站）
           runtime.channel.activity.record({
-            channel: "wechat-access-unqclawed",
+            channel: "wechat-openclaw-channel",
             accountId: route.accountId ?? "default",
             direction: "outbound",
           });
@@ -540,7 +540,7 @@ export const handlePrompt = async (
  */
 export const handleCancel = (
   message: CancelMessage,
-  client: WechatAccessWebSocketClient
+  client: GatewayClient
 ): void => {
   const { session_id: sessionId, prompt_id: promptId } = message.payload;
 
