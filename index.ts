@@ -1,6 +1,6 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { emptyPluginConfigSchema } from "openclaw/plugin-sdk";
-import { WechatAccessWebSocketClient, CentrifugeGatewayClient, handlePrompt, handleCancel } from "./websocket/index.js";
+import { WechatAccessWebSocketClient, CentrifugeGatewayClient, handlePrompt, handleCancel, registerTerminalClient, unregisterTerminalClient, flushPendingTerminalMessages } from "./websocket/index.js";
 import { setWecomRuntime, getWecomRuntime } from "./common/runtime.js";
 import { performLogin, performDeviceBinding, getDeviceGuid, getEnvironment, QClawAPI, CodeBuddyAPI, TokenExpiredError } from "./auth/index.js";
 import type { LoginMode, QClawCredentials, WorkBuddyCredentials } from "./auth/index.js";
@@ -250,6 +250,8 @@ const tencentAccessPlugin = {
             onConnected: () => {
               log?.info(`[wechat-access] Centrifuge 连接成功`);
               ctx.setStatus({ running: true });
+              registerTerminalClient(client, accountId);
+              flushPendingTerminalMessages(client);
 
               // 注册 Claw workspace channel（与 WorkBuddy 保持一致，WeChat KF 消息路由到此 channel）
               const clawPath = join(homedir(), "WorkBuddy", "Claw");
@@ -303,6 +305,7 @@ const tencentAccessPlugin = {
           abortSignal.addEventListener("abort", () => {
             log?.info(`[wechat-access] 停止账号 ${accountId}`);
             client.stop();
+            unregisterTerminalClient(client);
             if (wsClients.get(accountId) === client) {
               wsClients.delete(accountId);
               ctx.setStatus({ running: false });
@@ -384,6 +387,8 @@ const tencentAccessPlugin = {
         onConnected: () => {
           log?.info(`[wechat-access] WebSocket 连接成功`);
           ctx.setStatus({ running: true });
+          registerTerminalClient(qclawClient, accountId);
+          flushPendingTerminalMessages(qclawClient);
         },
         onDisconnected: (reason?: string) => {
           log?.warn(`[wechat-access] WebSocket 连接断开: ${reason}`);
@@ -409,6 +414,7 @@ const tencentAccessPlugin = {
         abortSignal.addEventListener("abort", () => {
           log?.info(`[wechat-access] 停止账号 ${accountId}`);
           qclawClient.stop();
+          unregisterTerminalClient(qclawClient);
           if (wsClients.get(accountId) === qclawClient) {
             wsClients.delete(accountId);
             ctx.setStatus({ running: false });
@@ -427,6 +433,7 @@ const tencentAccessPlugin = {
       const client = wsClients.get(accountId);
       if (client) {
         client.stop();
+        unregisterTerminalClient(client);
         wsClients.delete(accountId);
         ctx.setStatus({ running: false });
         log?.info(`[wechat-access] 账号 ${accountId} 已停止`);
